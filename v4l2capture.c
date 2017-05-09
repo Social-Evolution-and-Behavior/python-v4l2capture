@@ -20,6 +20,7 @@
 #include <libv4l2.h>
 #else
 #include <sys/ioctl.h>
+#include <sys/time.h>
 #define v4l2_close close
 #define v4l2_ioctl ioctl
 #define v4l2_mmap mmap
@@ -440,6 +441,30 @@ static PyObject *Video_device_set_exposure_absolute(Video_device *self, PyObject
 #endif
 }
 
+
+static PyObject *Video_device_set_focus_absolute(Video_device *self, PyObject *args)
+{
+#ifdef V4L2_CID_FOCUS_ABSOLUTE
+    int focus;
+    if(!PyArg_ParseTuple(args, "i", &focus))
+    {
+        return NULL;
+    }
+    
+    struct v4l2_control ctrl;
+    CLEAR(ctrl);
+    ctrl.id    = V4L2_CID_FOCUS_ABSOLUTE;
+    ctrl.value = focus;
+    if(my_ioctl(self->fd, VIDIOC_S_CTRL, &ctrl)){
+        return NULL;
+    }
+    return Py_BuildValue("i",ctrl.value);
+#else
+    return NULL;
+#endif
+}
+
+
 static PyObject *Video_device_get_exposure_absolute(Video_device *self)
 {
 #ifdef V4L2_CID_EXPOSURE_ABSOLUTE
@@ -680,7 +705,9 @@ static PyObject *Video_device_read_internal(Video_device *self, int queue)
   PyObject *result = PyBytes_FromStringAndSize(
 #endif
       self->buffers[buffer.index].start, buffer.bytesused);
-
+                                        
+                                          
+                                                
   if(!result)
     {
       return NULL;
@@ -700,7 +727,9 @@ static PyObject *Video_device_read_internal(Video_device *self, int queue)
     {
       return NULL;
     }
-
+                                                
+  
+                                                
   char *rgb = PyString_AS_STRING(result);
   char *rgb_max = rgb + length;
   unsigned char *yuyv = self->buffers[buffer.index].start;
@@ -730,12 +759,22 @@ static PyObject *Video_device_read_internal(Video_device *self, int queue)
 #undef CLAMP
 #endif
 
-  if(queue && my_ioctl(self->fd, VIDIOC_QBUF, &buffer))
-    {
-      return NULL;
-    }
+  
+   int int_seq = buffer.sequence;
+   struct timeval ts = buffer.timestamp;
+   double double_ts = (ts.tv_sec * 1000000.0 + ts.tv_usec)/1000000.0;
 
-  return result;
+   
+   PyObject *result1 = Py_BuildValue("(N,f,d)",result,double_ts,int_seq);
+                                                
+                                                
+                                                
+if(queue && my_ioctl(self->fd, VIDIOC_QBUF, &buffer))
+{
+    return NULL;
+}
+                                                
+   return result1;
 }
 
 static PyObject *Video_device_read(Video_device *self)
@@ -802,6 +841,10 @@ static PyMethodDef Video_device_methods[] = {
        "set_exposure_absolute(exptime) -> exptime \n\n"
        "Request the video device to set exposure time to value. The device may "
        "choose another value than requested and will return its choice. " },
+  {"set_focus_absolute", (PyCFunction)Video_device_set_focus_absolute, METH_VARARGS,
+        "set_focus_absolute(exptime) -> focus \n\n"
+        "Request the video device to set focus to value. The device may "
+        "choose another value than requested and will return its choice. " },
   {"get_exposure_absolute", (PyCFunction)Video_device_get_exposure_absolute, METH_NOARGS,
        "get_exposure_absolute() -> exptime \n\n"
        "Request the video device to get exposure time value. " },
